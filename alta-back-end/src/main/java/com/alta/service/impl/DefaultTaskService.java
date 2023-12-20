@@ -3,26 +3,41 @@ package com.alta.service.impl;
 import com.alta.dto.TaskDto;
 import com.alta.entity.Student;
 import com.alta.entity.Task;
-import com.alta.entity.Topic;
 import com.alta.exception.TaskException;
+import com.alta.exception.WriteZipException;
 import com.alta.mapper.TaskMapper;
+import com.alta.mapper.TopicMapper;
 import com.alta.repository.TaskRepository;
-import com.alta.service.StudentService;
+import com.alta.repository.projection.FullTaskProjection;
 import com.alta.service.TaskService;
-import com.alta.service.TopicService;
+import com.alta.util.DefaultPdfFactory;
+import com.alta.web.controller.request.TaskRequest;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.tomcat.util.http.fileupload.IOUtils;
 import org.springframework.stereotype.Service;
-import java.util.Collection;
-import java.util.List;
-import java.util.stream.Collectors;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.util.*;
+import java.util.stream.Collectors;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
+
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class DefaultTaskService implements TaskService {
+
+    private static final String PDF_TYPE = ".pdf";
+    private static final String PDF_TYPE_WITH_ANSWER = "_WithAnswers.pdf";
+
+
     private final TaskRepository taskRepository;
     private final TaskMapper taskMapper;
-    private final StudentService studentService;
-    private final TopicService topicService;
+    private final TopicMapper topicMapper;
+    private final DefaultPdfFactory pdfFactory;
 
 
     @Override
@@ -31,79 +46,80 @@ public class DefaultTaskService implements TaskService {
     }
 
     @Override
-    public TaskDto save(TaskDto taskDto) {
-        Task newTask = taskMapper.toTask(taskDto);
-        return taskMapper.toTaskDto(taskRepository.save(newTask));
-    }
-
-    @Override
-    public void delete(int id) {
-        taskRepository.findById(id).ifPresent(task -> taskRepository.deleteById(id));
-    }
-
-    @Override
     public TaskDto update(int id, TaskDto taskDto) {
         return taskRepository.findById(id)
-                .map(taskRequired -> {
-                    taskRequired.setNumber(taskDto.getNumber());
-                    taskRequired.setImagePath(taskDto.getImagePath());
-                    taskRequired.setLevel(taskDto.getLevel());
-                    taskRequired.setText(taskDto.getText());
-                    taskRequired.setAnswer(taskDto.getAnswer());
-                    return taskMapper.toTaskDto(taskRepository.save(taskRequired));
+                .map(task -> {
+                    task.setDescription(taskDto.getDescription());
+                    task.setAnswer(taskDto.getAnswer());
+                    task.setImagePath(taskDto.getImagePath());
+                    task.setLevel(taskDto.getLevel());
+                    return taskMapper.toTaskDto(taskRepository.save(task));
                 })
                 .orElseThrow(() -> new TaskException(id));
     }
 
-    Task findById(int taskId) {
-        return taskRepository.findById(taskId).orElseThrow(() -> new TaskException(taskId));
+    @Override
+    public TaskDto findById(int id) {
+        return taskMapper.toTaskDto(taskRepository.findById(id).orElseThrow(() -> new TaskException(id)));
     }
 
     @Override
-    public TaskDto assignStudentToTask(int taskId, int studentId) {
-        Task task = findById(taskId);
-        Student student = studentService.findById(studentId);
-        task.addStudent(student);
-        return save(taskMapper.toTaskDto(task));
+    public void getZipTaskByFilter(ZipOutputStream zipOutputStream,
+                                   String fileName,
+                                   Integer studentId,
+                                   List<TaskRequest> filteredTaskDtoList) {
+        String pdfFileName = fileName + PDF_TYPE;
+        String pdfFileNameWithAnswers = fileName + PDF_TYPE_WITH_ANSWER;
+
+        String[] fileNameArray = new String[]{pdfFileName, pdfFileNameWithAnswers};
+
+//        List<Integer> taskIdList = filteredTaskDtoList.stream()
+//                .flatMap(task -> task.getTaskIds().stream())
+//                .toList();
+
+        List<Integer> taskIdList = new ArrayList<>();
+        for (TaskRequest taskRequest : filteredTaskDtoList) {
+            taskIdList.addAll(taskRequest.getTaskIds());
+        }
+
+        List<Task> taskList = new ArrayList<>();
+
+        for (Integer taskId : taskIdList) {
+            Optional<Task> optionalTask = taskRepository.findById(taskId);
+            optionalTask.ifPresent(taskList::add);
+        }
+
+        pdfFactory.createPdfFromTaskList(pdfFileName, taskList);
+        pdfFactory.createPdfFromTaskListWithAnswers(pdfFileNameWithAnswers, taskList);
+        createZip(zipOutputStream, fileNameArray);
     }
 
-    @Override
-    public TaskDto assignTopicToTask(int taskId, int topicId) {
-        Task task = findById(taskId);
-        Topic topic = topicService.findById(topicId);
-        task.setTopic(topic);
-        return save(taskMapper.toTaskDto(task));
+    private void createZip(ZipOutputStream zipOutputStream, String[] fileNameArray) {
+        Arrays.stream(fileNameArray).forEach(fileName -> writeFileToZip(zipOutputStream, fileName));
     }
 
-    @Override
-    public List<TaskDto> findAllByTopicId(int topicId) {
-        return taskRepository.findAllByTopicId(topicId)
-                .stream()
-                .map(taskMapper::toTaskDto)
-                .collect(Collectors.toList());
-    }
-
-    @Override
-    public List<TaskDto> findAllByStudentId(int studentId) {
-        return taskRepository.findAllByStudentsId(studentId)
-                .stream()
-                .map(taskMapper::toTaskDto)
-                .collect(Collectors.toList());
-    }
-
-    @Override
-    public List<TaskDto> findAllByTopicIdList(List<Integer> topicIdList) {
-        return topicIdList.stream()
-                .map(taskRepository::findAllByTopicId)
-                .flatMap(Collection::stream)
-                .map(taskMapper::toTaskDto)
-                .collect(Collectors.toList());
-    }
-
-    @Override
-    public void deleteStudentFromTasks(Student student) {
-        student.getTasks().forEach(task ->
-                task.getStudents()
-                        .remove(student));
+    private void writeFileToZip(ZipOutputStream zipOutputStream, String fileName){
+        File file = new File(fileName);
+        Exception exception = null;
+        try (FileInputStream fileInputStream = new FileInputStream(file)){
+            zipOutputStream.putNextEntry(new ZipEntry(file.getName()));
+            IOUtils.copy(fileInputStream, zipOutputStream);
+        } catch (IOException e) {
+            exception = e;
+            log.error("Problem writing a file to zip", e);
+            throw new WriteZipException("There is problem during putting pdf to zip");
+        } finally {
+            try {
+                if (file.exists()) {
+                    file.delete();
+                }
+                zipOutputStream.closeEntry();
+            } catch (IOException e) {
+                if (exception != null) {
+                    exception.addSuppressed(new WriteZipException("There is problem during putting pdf to zip"));
+                }
+                log.error("Problem when try close ZipEntry", e);
+            }
+        }
     }
 }

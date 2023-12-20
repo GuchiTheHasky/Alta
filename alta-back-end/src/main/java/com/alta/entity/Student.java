@@ -1,22 +1,26 @@
 package com.alta.entity;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
-import lombok.Data;
-import lombok.EqualsAndHashCode;
-import lombok.ToString;
+import lombok.*;
+import org.hibernate.annotations.JdbcType;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 @Entity
-@EqualsAndHashCode(exclude = "tasks")
-@ToString(exclude = "tasks")
+@Table(schema="alta_reborn", name="student")
 @Data
+@NoArgsConstructor
+@EqualsAndHashCode(exclude = {"tasks"})
+@AllArgsConstructor
 public class Student {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private int id;
+    @Column(name = "student_id")
+    private int studentId;
 
     @Column(name = "first_name")
     private String firstName;
@@ -26,9 +30,10 @@ public class Student {
 
     private String email;
     private String grade;
-    private String status;
+    private String comment;
 
-    @ManyToMany(mappedBy = "students")
-    @JsonIgnore
-    private Set<Task> tasks = new HashSet<>();
+    @JdbcTypeCode(SqlTypes.JSON)
+    @OneToMany(fetch = FetchType.LAZY, mappedBy = "student")
+    private Set<Task> tasks;
+
 }

@@ -3,12 +3,12 @@ package com.alta.mapper;
 import com.alta.dto.TopicDto;
 import com.alta.entity.Topic;
 import org.mapstruct.Mapper;
+import org.mapstruct.Mapping;
 
 @Mapper(componentModel = "spring")
 public interface TopicMapper {
-
+    //@Mapping(target = "tasks", ignore = true) // todo: check it, I supposed that it is not necessary
     Topic toTopic(TopicDto topicDto);
 
     TopicDto toTopicDto(Topic topic);
-
 }

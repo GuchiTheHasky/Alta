@@ -1,43 +1,51 @@
 package com.alta.entity;
 
 import jakarta.persistence.*;
-import lombok.Data;
-import lombok.EqualsAndHashCode;
-import lombok.ToString;
+import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
 import java.util.HashSet;
 import java.util.Set;
 
+//@EqualsAndHashCode(exclude = "students")
+//@ToString(exclude = "students")
 @Data
-@EqualsAndHashCode(exclude = "students")
-@ToString(exclude = "students")
 @Entity
+@Table(schema="alta_reborn", name="task")
+@EqualsAndHashCode
+@NoArgsConstructor
+@AllArgsConstructor
 public class Task {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private int id;
+    private int taskId;
 
-    private int number;
+    private String description;
+
+    private String answer;
 
     @Column(name="image_path")
     private String imagePath;
 
     private String level;
-    private String text;
-    private String answer;
 
     @ManyToOne
-    @JoinColumn(name="topic_id", referencedColumnName = "id")
     private Topic topic;
 
-    @ManyToMany
-    @JoinTable(
-            name="task_student",
-            joinColumns = @JoinColumn(name="task_id"),
-            inverseJoinColumns = @JoinColumn(name="student_id")
-    )
-    private Set<Student> students = new HashSet<>();
-
-    public void addStudent(Student student) {
-        students.add(student);
-    }
+    @ManyToOne
+    private Student student;
 }
+
+
+// @ManyToOne(cascade = CascadeType.ALL)
+//    @JoinColumn(name="topic_id", referencedColumnName = "id")
+//    private Topic topic;
+//
+//    @ManyToMany(fetch = FetchType.LAZY, cascade = CascadeType.ALL)
+//    @JoinTable(
+//            name="task_student",
+//            joinColumns = @JoinColumn(name="task_id"),
+//            inverseJoinColumns = @JoinColumn(name="student_id")
+//    )
+//    private Set<Student> students = new HashSet<>();
